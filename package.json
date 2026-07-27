@@ -1,0 +1,43 @@
+{
+  "name": "cursor-ai-dashboard",
+  "displayName": "Cursor AI Dashboard",
+  "description": "Editor webview dashboard showing Cursor model usage as horizontal progress bars.",
+  "version": "0.1.0",
+  "publisher": "bdbarnett",
+  "engines": {
+    "vscode": "^1.85.0"
+  },
+  "categories": [
+    "Other"
+  ],
+  "activationEvents": [
+    "onCommand:cursorAiDashboard.open"
+  ],
+  "main": "./out/extension.js",
+  "contributes": {
+    "commands": [
+      {
+        "command": "cursorAiDashboard.open",
+        "title": "Cursor AI Dashboard: Open"
+      },
+      {
+        "command": "cursorAiDashboard.refresh",
+        "title": "Cursor AI Dashboard: Refresh"
+      }
+    ]
+  },
+  "scripts": {
+    "vscode:prepublish": "npm run compile",
+    "compile": "tsc -p ./",
+    "watch": "tsc -watch -p ./"
+  },
+  "devDependencies": {
+    "@types/node": "^20.11.0",
+    "@types/sql.js": "^1.4.11",
+    "@types/vscode": "^1.85.0",
+    "typescript": "^5.3.3"
+  },
+  "dependencies": {
+    "sql.js": "^1.10.3"
+  }
+}
