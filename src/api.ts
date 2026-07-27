@@ -232,6 +232,90 @@ function mergeBars(...groups: UsageBar[][]): UsageBar[] {
   return Array.from(map.values());
 }
 
+function barsFromUsageSummary(summary: Record<string, unknown> | undefined): UsageBar[] {
+  if (!summary) {
+    return [];
+  }
+
+  const bars: UsageBar[] = [];
+  const individual = summary.individualUsage as
+    | {
+        plan?: {
+          used?: number;
+          limit?: number;
+          remaining?: number;
+          autoPercentUsed?: number;
+          apiPercentUsed?: number;
+          totalPercentUsed?: number;
+        };
+        onDemand?: { used?: number; limit?: number | null; enabled?: boolean };
+      }
+    | undefined;
+
+  const plan = individual?.plan;
+  if (plan) {
+    const limit = asNumber(plan.limit);
+    const used = asNumber(plan.used);
+    const autoPct = asNumber(plan.autoPercentUsed);
+    const apiPct = asNumber(plan.apiPercentUsed);
+
+    // Prefer the two named pools Cursor shows in the spending dashboard.
+    if (autoPct !== undefined && limit !== undefined && limit > 0) {
+      bars.push({
+        id: "cursor-models",
+        label: "Cursor Models",
+        used: (autoPct / 100) * limit,
+        limit,
+        unit: "credits",
+      });
+    }
+    if (apiPct !== undefined && limit !== undefined && limit > 0) {
+      bars.push({
+        id: "other-models",
+        label: "Other Models / API",
+        used: (apiPct / 100) * limit,
+        limit,
+        unit: "credits",
+      });
+    }
+
+    if (bars.length === 0 && used !== undefined && limit !== undefined && limit > 0) {
+      bars.push({
+        id: "plan-pool",
+        label: "Plan usage",
+        used,
+        limit,
+        unit: "credits",
+      });
+    }
+  }
+
+  const onDemand = individual?.onDemand;
+  if (onDemand?.enabled) {
+    const used = asNumber(onDemand.used) ?? 0;
+    const limit = asNumber(onDemand.limit ?? undefined);
+    if (limit !== undefined && limit > 0) {
+      bars.push({
+        id: "on-demand",
+        label: "On-demand",
+        used,
+        limit,
+        unit: "cents",
+      });
+    } else if (used > 0) {
+      bars.push({
+        id: "on-demand",
+        label: "On-demand",
+        used,
+        limit: Math.max(used, 100),
+        unit: "cents",
+      });
+    }
+  }
+
+  return bars;
+}
+
 function aggregateFromUsageEvents(events: unknown): UsageBar[] {
   if (!Array.isArray(events)) {
     return [];
@@ -246,30 +330,35 @@ function aggregateFromUsageEvents(events: unknown): UsageBar[] {
     const model =
       (typeof e.model === "string" && e.model) ||
       (typeof e.modelName === "string" && e.modelName) ||
-      (typeof e.kind === "string" && e.kind) ||
       undefined;
     if (!model) {
       continue;
     }
+    const tokenUsage =
+      e.tokenUsage && typeof e.tokenUsage === "object"
+        ? (e.tokenUsage as Record<string, unknown>)
+        : undefined;
     const cost =
-      asNumber(e.tokenUsage) ??
+      asNumber(e.requestsCosts) ??
+      asNumber(e.chargedCents) ??
+      asNumber(tokenUsage?.totalCents) ??
       asNumber(e.totalTokens) ??
-      asNumber(e.requests) ??
       asNumber(e.count) ??
       1;
     byModel.set(model, (byModel.get(model) ?? 0) + cost);
   }
 
-  return Array.from(byModel.entries())
-    .sort((a, b) => b[1] - a[1])
-    .slice(0, 12)
-    .map(([model, used]) => ({
-      id: `model-${model}`,
-      label: model,
-      used,
-      limit: Math.max(used, Math.ceil(used / 0.85)),
-      unit: "events",
-    }));
+  const totals = Array.from(byModel.entries()).sort((a, b) => b[1] - a[1]).slice(0, 12);
+  const maxUsed = totals[0]?.[1] ?? 0;
+
+  return totals.map(([model, used]) => ({
+    id: `model-${model}`,
+    label: model,
+    used,
+    // Events endpoint has no hard per-model quota; scale bars relative to top model.
+    limit: Math.max(maxUsed, used, 1),
+    unit: "cost units",
+  }));
 }
 
 async function fetchAuthUsage(token: string): Promise<AuthUsageResponse | undefined> {
@@ -325,6 +414,26 @@ async function fetchUsageSummary(token: string): Promise<Record<string, unknown>
   return result.json as Record<string, unknown>;
 }
 
+async function fetchFilteredUsageEvents(token: string): Promise<unknown[] | undefined> {
+  const result = await getJson("https://cursor.com/api/dashboard/get-filtered-usage-events", {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${token}`,
+      Cookie: `WorkosCursorSessionToken=${encodeURIComponent(token)}`,
+      Accept: "application/json",
+      "Content-Type": "application/json",
+      Origin: "https://cursor.com",
+      "User-Agent": "cursor-ai-dashboard/0.1",
+    },
+    body: JSON.stringify({ page: 1, pageSize: 200 }),
+  });
+  if (!result.ok || !result.json || typeof result.json !== "object") {
+    return undefined;
+  }
+  const payload = result.json as { usageEventsDisplay?: unknown[] };
+  return Array.isArray(payload.usageEventsDisplay) ? payload.usageEventsDisplay : undefined;
+}
+
 export async function fetchDashboardUsage(
   token: string | undefined,
   forceDemo = false
@@ -337,6 +446,7 @@ export async function fetchDashboardUsage(
   let authUsage: AuthUsageResponse | undefined;
   let periodUsage: PeriodUsageResponse | undefined;
   let summary: Record<string, unknown> | undefined;
+  let usageEvents: unknown[] | undefined;
 
   try {
     authUsage = await fetchAuthUsage(token);
@@ -367,15 +477,26 @@ export async function fetchDashboardUsage(
     notes.push("usage-summary request failed.");
   }
 
+  try {
+    usageEvents = await fetchFilteredUsageEvents(token);
+    if (!usageEvents) {
+      notes.push("filtered usage events unavailable.");
+    }
+  } catch {
+    notes.push("filtered usage events request failed.");
+  }
+
   const eventBars = aggregateFromUsageEvents(
-    (summary?.usageEventsDisplay ??
+    usageEvents ??
+      summary?.usageEventsDisplay ??
       summary?.usageEvents ??
       summary?.events ??
       periodUsage?.usageEvents ??
-      (periodUsage as { filteredUsageEvents?: unknown } | undefined)?.filteredUsageEvents) as unknown
+      (periodUsage as { filteredUsageEvents?: unknown } | undefined)?.filteredUsageEvents
   );
 
   let bars = mergeBars(
+    barsFromUsageSummary(summary),
     barsFromPeriodUsage(periodUsage || {}),
     barsFromAuthUsage(authUsage || {}),
     eventBars
@@ -418,6 +539,7 @@ export async function fetchDashboardUsage(
     (typeof periodUsage?.plan === "string" && periodUsage.plan) ||
     (typeof periodUsage?.plan === "object" && periodUsage.plan?.name) ||
     (typeof summary?.planName === "string" && (summary.planName as string)) ||
+    (typeof summary?.membershipType === "string" && (summary.membershipType as string)) ||
     undefined;
 
   return {

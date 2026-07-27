@@ -14,11 +14,19 @@ A Cursor / VS Code extension that opens an editor-area webview and shows horizon
 ## Develop
 
 ```bash
+# in WSL
+cd ~/gh/bdbarnett/cursor-ai-dashboard
+source ~/.nvm/nvm.sh   # if needed
 npm install
 npm run compile
 ```
 
-Then press F5 in VS Code/Cursor (or use **Developer: Install Extension from Location…**) against this folder.
+Then press **F5** (*Run Extension*) or use **Developer: Install Extension from Location…** on this folder.
+
+Commands:
+
+- `Cursor AI Dashboard: Open`
+- `Cursor AI Dashboard: Refresh`
 
 ## Notes
 

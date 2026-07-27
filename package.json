@@ -4,6 +4,10 @@
   "description": "Editor webview dashboard showing Cursor model usage as horizontal progress bars.",
   "version": "0.1.0",
   "publisher": "bdbarnett",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/bdbarnett/cursor-ai-dashboard"
+  },
   "engines": {
     "vscode": "^1.85.0"
   },
@@ -29,7 +33,8 @@
   "scripts": {
     "vscode:prepublish": "npm run compile",
     "compile": "tsc -p ./",
-    "watch": "tsc -watch -p ./"
+    "watch": "tsc -watch -p ./",
+    "package": "vsce package"
   },
   "devDependencies": {
     "@types/node": "^20.11.0",
