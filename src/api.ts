@@ -1,76 +1,186 @@
-export interface UsageBar {
+export interface PoolMeter {
   id: string;
   label: string;
-  used: number;
-  limit: number;
-  unit?: string;
+  percentUsed: number;
+  usedCredits: number;
+  limitCredits: number;
+  detail?: string;
+}
+
+export interface SpendSlice {
+  id: string;
+  label: string;
+  cents: number;
+}
+
+export interface ModelRow {
+  model: string;
+  cents: number;
+  sharePct: number;
+  inputTokens: number;
+  outputTokens: number;
+  cacheReadTokens: number;
+  cacheWriteTokens: number;
+  /** USD per million total tokens (in+out); null if no token volume */
+  dollarsPerMillionTokens: number | null;
+  tier?: number;
+  isAutoBucket?: boolean;
 }
 
 export interface UsageDashboardData {
   source: "live" | "demo";
   billingCycleStart?: string;
   billingCycleEnd?: string;
+  daysElapsed?: number;
+  daysRemaining?: number;
   planName?: string;
-  bars: UsageBar[];
+  planPrice?: string;
+  messages?: string[];
+  pools: PoolMeter[];
+  composition: SpendSlice[];
+  models: ModelRow[];
+  autoBucketModels?: string[];
+  burn?: {
+    spendPerDayCents: number;
+    includedLimitCents: number;
+    includedUsedCents: number;
+    includedRemainingCents: number;
+  };
+  totals?: {
+    totalCostCents?: number;
+    includedSpendCents?: number;
+    bonusSpendCents?: number;
+    onDemandCents?: number;
+    totalInputTokens?: number;
+    totalOutputTokens?: number;
+    totalCacheReadTokens?: number;
+    totalCacheWriteTokens?: number;
+  };
   fetchedAt: string;
   notes?: string[];
 }
 
-interface AuthUsageResponse {
-  startOfMonth?: string;
-  gpt4?: { numRequests?: number; numRequestsTotal?: number; maxRequestUsage?: number | null };
-  "gpt-4"?: { numRequests?: number; numRequestsTotal?: number; maxRequestUsage?: number | null };
-  gpt35?: { numRequests?: number; maxRequestUsage?: number | null };
-  "gpt-3.5-turbo"?: { numRequests?: number; maxRequestUsage?: number | null };
-  [key: string]: unknown;
-}
-
 interface PeriodUsageResponse {
-  billingCycleStart?: string;
-  billingCycleEnd?: string;
-  plan?: { name?: string } | string;
+  billingCycleStart?: string | number;
+  billingCycleEnd?: string | number;
   planUsage?: {
     totalSpend?: number;
     includedSpend?: number;
+    bonusSpend?: number;
     limit?: number;
     remaining?: number;
+    autoPercentUsed?: number;
+    apiPercentUsed?: number;
+    totalPercentUsed?: number;
+    bonusTooltip?: string;
   };
   displayMessage?: string;
-  totalUsage?: number;
-  limit?: number;
-  individualUsage?: Record<
-    string,
-    {
-      used?: number;
-      limit?: number;
-      remaining?: number;
-    }
-  >;
-  modelUsage?: Record<string, { used?: number; limit?: number }>;
+  autoModelSelectedDisplayMessage?: string;
+  namedModelSelectedDisplayMessage?: string;
+  autoBucketModels?: string[];
   [key: string]: unknown;
+}
+
+interface AggregatedUsageResponse {
+  aggregations?: Array<{
+    modelIntent?: string;
+    inputTokens?: string | number;
+    outputTokens?: string | number;
+    cacheWriteTokens?: string | number;
+    cacheReadTokens?: string | number;
+    totalCents?: number;
+    tier?: number;
+  }>;
+  totalInputTokens?: string | number;
+  totalOutputTokens?: string | number;
+  totalCacheWriteTokens?: string | number;
+  totalCacheReadTokens?: string | number;
+  totalCostCents?: number;
 }
 
 function demoData(reason?: string): UsageDashboardData {
   const now = new Date();
   const start = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1));
   const end = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + 1, 0));
+  const daysElapsed = Math.max(1, Math.floor((now.getTime() - start.getTime()) / 86400000));
+  const daysRemaining = Math.max(0, Math.ceil((end.getTime() - now.getTime()) / 86400000));
   return {
     source: "demo",
     planName: "Demo Plan",
+    planPrice: "$20/mo",
     billingCycleStart: start.toISOString().slice(0, 10),
     billingCycleEnd: end.toISOString().slice(0, 10),
+    daysElapsed,
+    daysRemaining,
     fetchedAt: now.toISOString(),
+    messages: ["Demo data — connect a live Cursor session for real usage."],
     notes: [
       reason || "Showing demo data (no Cursor auth token or API unavailable).",
-      "Open Cursor while signed in so state.vscdb contains an access token.",
+      "Token is read from Cursor's state.vscdb (on WSL via Windows python.exe).",
     ],
-    bars: [
-      { id: "cursor-models", label: "Cursor Models", used: 420, limit: 500, unit: "requests" },
-      { id: "other-models", label: "Other Models / API", used: 75, limit: 250, unit: "requests" },
-      { id: "claude-sonnet", label: "claude-4-sonnet", used: 310, limit: 400, unit: "requests" },
-      { id: "gpt-4o", label: "gpt-4o", used: 88, limit: 200, unit: "requests" },
-      { id: "gemini", label: "gemini-2.5-pro", used: 45, limit: 150, unit: "requests" },
+    pools: [
+      {
+        id: "auto",
+        label: "Auto / Cursor Models",
+        percentUsed: 89,
+        usedCredits: 356,
+        limitCredits: 400,
+        detail: "89% of included pool",
+      },
+      {
+        id: "api",
+        label: "API / Named Models",
+        percentUsed: 100,
+        usedCredits: 400,
+        limitCredits: 400,
+        detail: "100% of included pool",
+      },
     ],
+    composition: [
+      { id: "included", label: "Included", cents: 40000 },
+      { id: "bonus", label: "Bonus", cents: 12000 },
+    ],
+    models: [
+      {
+        model: "claude-4-sonnet",
+        cents: 1240,
+        sharePct: 45,
+        inputTokens: 2_000_000,
+        outputTokens: 400_000,
+        cacheReadTokens: 8_000_000,
+        cacheWriteTokens: 100_000,
+        dollarsPerMillionTokens: 5.17,
+        tier: 1,
+      },
+      {
+        model: "default",
+        cents: 880,
+        sharePct: 32,
+        inputTokens: 5_000_000,
+        outputTokens: 800_000,
+        cacheReadTokens: 20_000_000,
+        cacheWriteTokens: 200_000,
+        dollarsPerMillionTokens: 1.52,
+        tier: 2,
+        isAutoBucket: true,
+      },
+    ],
+    autoBucketModels: ["default", "composer-2.5"],
+    burn: {
+      spendPerDayCents: 40000 / daysElapsed,
+      includedLimitCents: 40000,
+      includedUsedCents: 40000,
+      includedRemainingCents: 0,
+    },
+    totals: {
+      totalCostCents: 52000,
+      includedSpendCents: 40000,
+      bonusSpendCents: 12000,
+      totalInputTokens: 7_000_000,
+      totalOutputTokens: 1_200_000,
+      totalCacheReadTokens: 28_000_000,
+      totalCacheWriteTokens: 300_000,
+    },
   };
 }
 
@@ -90,304 +200,211 @@ async function getJson(
 }
 
 function asNumber(value: unknown): number | undefined {
-  return typeof value === "number" && Number.isFinite(value) ? value : undefined;
+  if (typeof value === "number" && Number.isFinite(value)) {
+    return value;
+  }
+  if (typeof value === "string" && value.trim() && Number.isFinite(Number(value))) {
+    return Number(value);
+  }
+  return undefined;
+}
+
+function toEpochMs(value: unknown): number | undefined {
+  if (typeof value === "number" || (typeof value === "string" && /^\d+$/.test(value.trim()))) {
+    const n = typeof value === "number" ? value : Number(value);
+    return n < 1e12 ? n * 1000 : n;
+  }
+  if (typeof value === "string") {
+    const t = Date.parse(value);
+    if (!Number.isNaN(t)) {
+      return t;
+    }
+  }
+  return undefined;
 }
 
 function formatDate(value: unknown): string | undefined {
-  if (typeof value !== "string" && typeof value !== "number") {
+  const ms = toEpochMs(value);
+  if (ms === undefined) {
     return undefined;
   }
-  const d = new Date(value);
+  const d = new Date(ms);
   if (Number.isNaN(d.getTime())) {
-    return typeof value === "string" ? value.slice(0, 10) : undefined;
+    return undefined;
   }
   return d.toISOString().slice(0, 10);
 }
 
-function barsFromAuthUsage(data: AuthUsageResponse): UsageBar[] {
-  const bars: UsageBar[] = [];
-  const entries: Array<[string, string]> = [
-    ["gpt-4", "GPT-4 / Cursor Models"],
-    ["gpt4", "GPT-4 / Cursor Models"],
-    ["gpt-3.5-turbo", "GPT-3.5"],
-    ["gpt35", "GPT-3.5"],
-  ];
-
-  const seen = new Set<string>();
-  for (const [key, label] of entries) {
-    const block = data[key] as
-      | { numRequests?: number; numRequestsTotal?: number; maxRequestUsage?: number | null }
-      | undefined;
-    if (!block || seen.has(label)) {
-      continue;
+function workosSessionCookie(token: string): string | undefined {
+  try {
+    const payload = JSON.parse(
+      Buffer.from(token.split(".")[1] ?? "", "base64url").toString("utf8")
+    ) as { sub?: string };
+    if (!payload.sub) {
+      return undefined;
     }
-    const used = asNumber(block.numRequestsTotal) ?? asNumber(block.numRequests) ?? 0;
-    const limit = asNumber(block.maxRequestUsage ?? undefined);
-    if (limit === undefined && used === 0) {
-      continue;
-    }
-    bars.push({
-      id: key,
-      label,
-      used,
-      limit: limit ?? Math.max(used, 1),
-      unit: "requests",
-    });
-    seen.add(label);
-  }
-
-  // Any other model-like objects on the payload
-  for (const [key, value] of Object.entries(data)) {
-    if (["startOfMonth", "gpt4", "gpt-4", "gpt35", "gpt-3.5-turbo"].includes(key)) {
-      continue;
-    }
-    if (!value || typeof value !== "object") {
-      continue;
-    }
-    const obj = value as {
-      numRequests?: number;
-      numRequestsTotal?: number;
-      maxRequestUsage?: number | null;
-    };
-    const used = asNumber(obj.numRequestsTotal) ?? asNumber(obj.numRequests);
-    const limit = asNumber(obj.maxRequestUsage ?? undefined);
-    if (used === undefined && limit === undefined) {
-      continue;
-    }
-    bars.push({
-      id: key,
-      label: key,
-      used: used ?? 0,
-      limit: limit ?? Math.max(used ?? 0, 1),
-      unit: "requests",
-    });
-  }
-
-  return bars;
-}
-
-function barsFromPeriodUsage(data: PeriodUsageResponse): UsageBar[] {
-  const bars: UsageBar[] = [];
-  const planUsage = data.planUsage;
-  if (planUsage) {
-    const used =
-      asNumber(planUsage.totalSpend) ??
-      asNumber(planUsage.includedSpend) ??
-      asNumber(data.totalUsage) ??
-      0;
-    const limit = asNumber(planUsage.limit) ?? asNumber(data.limit);
-    if (limit !== undefined) {
-      bars.push({
-        id: "plan-pool",
-        label: "Cursor Models",
-        used,
-        limit,
-        unit: "credits",
-      });
-    }
-  }
-
-  const individual = data.individualUsage || data.modelUsage;
-  if (individual && typeof individual === "object") {
-    for (const [key, value] of Object.entries(individual)) {
-      if (!value || typeof value !== "object") {
-        continue;
-      }
-      const used = asNumber(value.used) ?? 0;
-      const limit = asNumber(value.limit) ?? Math.max(used, 1);
-      const label =
-        key === "cursor" || key === "cursorModels"
-          ? "Cursor Models"
-          : key === "api" || key === "other" || key === "otherModels"
-            ? "Other Models / API"
-            : key;
-      bars.push({
-        id: `period-${key}`,
-        label,
-        used,
-        limit,
-        unit: "credits",
-      });
-    }
-  }
-
-  return bars;
-}
-
-function mergeBars(...groups: UsageBar[][]): UsageBar[] {
-  const map = new Map<string, UsageBar>();
-  for (const group of groups) {
-    for (const bar of group) {
-      const existing = map.get(bar.label.toLowerCase());
-      if (!existing) {
-        map.set(bar.label.toLowerCase(), bar);
-      } else {
-        // Prefer the entry with a higher limit / more recent-looking usage
-        if (bar.limit >= existing.limit) {
-          map.set(bar.label.toLowerCase(), bar);
-        }
-      }
-    }
-  }
-  return Array.from(map.values());
-}
-
-function barsFromUsageSummary(summary: Record<string, unknown> | undefined): UsageBar[] {
-  if (!summary) {
-    return [];
-  }
-
-  const bars: UsageBar[] = [];
-  const individual = summary.individualUsage as
-    | {
-        plan?: {
-          used?: number;
-          limit?: number;
-          remaining?: number;
-          autoPercentUsed?: number;
-          apiPercentUsed?: number;
-          totalPercentUsed?: number;
-        };
-        onDemand?: { used?: number; limit?: number | null; enabled?: boolean };
-      }
-    | undefined;
-
-  const plan = individual?.plan;
-  if (plan) {
-    const limit = asNumber(plan.limit);
-    const used = asNumber(plan.used);
-    const autoPct = asNumber(plan.autoPercentUsed);
-    const apiPct = asNumber(plan.apiPercentUsed);
-
-    // Prefer the two named pools Cursor shows in the spending dashboard.
-    if (autoPct !== undefined && limit !== undefined && limit > 0) {
-      bars.push({
-        id: "cursor-models",
-        label: "Cursor Models",
-        used: (autoPct / 100) * limit,
-        limit,
-        unit: "credits",
-      });
-    }
-    if (apiPct !== undefined && limit !== undefined && limit > 0) {
-      bars.push({
-        id: "other-models",
-        label: "Other Models / API",
-        used: (apiPct / 100) * limit,
-        limit,
-        unit: "credits",
-      });
-    }
-
-    if (bars.length === 0 && used !== undefined && limit !== undefined && limit > 0) {
-      bars.push({
-        id: "plan-pool",
-        label: "Plan usage",
-        used,
-        limit,
-        unit: "credits",
-      });
-    }
-  }
-
-  const onDemand = individual?.onDemand;
-  if (onDemand?.enabled) {
-    const used = asNumber(onDemand.used) ?? 0;
-    const limit = asNumber(onDemand.limit ?? undefined);
-    if (limit !== undefined && limit > 0) {
-      bars.push({
-        id: "on-demand",
-        label: "On-demand",
-        used,
-        limit,
-        unit: "cents",
-      });
-    } else if (used > 0) {
-      bars.push({
-        id: "on-demand",
-        label: "On-demand",
-        used,
-        limit: Math.max(used, 100),
-        unit: "cents",
-      });
-    }
-  }
-
-  return bars;
-}
-
-function aggregateFromUsageEvents(events: unknown): UsageBar[] {
-  if (!Array.isArray(events)) {
-    return [];
-  }
-
-  const byModel = new Map<string, number>();
-  for (const event of events) {
-    if (!event || typeof event !== "object") {
-      continue;
-    }
-    const e = event as Record<string, unknown>;
-    const model =
-      (typeof e.model === "string" && e.model) ||
-      (typeof e.modelName === "string" && e.modelName) ||
-      undefined;
-    if (!model) {
-      continue;
-    }
-    const tokenUsage =
-      e.tokenUsage && typeof e.tokenUsage === "object"
-        ? (e.tokenUsage as Record<string, unknown>)
-        : undefined;
-    const cost =
-      asNumber(e.requestsCosts) ??
-      asNumber(e.chargedCents) ??
-      asNumber(tokenUsage?.totalCents) ??
-      asNumber(e.totalTokens) ??
-      asNumber(e.count) ??
-      1;
-    byModel.set(model, (byModel.get(model) ?? 0) + cost);
-  }
-
-  const totals = Array.from(byModel.entries()).sort((a, b) => b[1] - a[1]).slice(0, 12);
-  const maxUsed = totals[0]?.[1] ?? 0;
-
-  return totals.map(([model, used]) => ({
-    id: `model-${model}`,
-    label: model,
-    used,
-    // Events endpoint has no hard per-model quota; scale bars relative to top model.
-    limit: Math.max(maxUsed, used, 1),
-    unit: "cost units",
-  }));
-}
-
-async function fetchAuthUsage(token: string): Promise<AuthUsageResponse | undefined> {
-  const result = await getJson("https://api2.cursor.sh/auth/usage", {
-    method: "GET",
-    headers: {
-      Authorization: `Bearer ${token}`,
-      Accept: "application/json",
-      "User-Agent": "cursor-ai-dashboard/0.1",
-    },
-  });
-  if (!result.ok) {
+    return `WorkosCursorSessionToken=${encodeURIComponent(`${payload.sub}::${token}`)}`;
+  } catch {
     return undefined;
   }
-  return result.json as AuthUsageResponse;
+}
+
+function authHeaders(token: string, cookie?: string): Record<string, string> {
+  const headers: Record<string, string> = {
+    Authorization: `Bearer ${token}`,
+    Accept: "application/json",
+    "User-Agent": "cursor-ai-dashboard/0.1",
+  };
+  if (cookie) {
+    headers.Cookie = cookie;
+  }
+  return headers;
+}
+
+function buildPools(
+  period: PeriodUsageResponse | undefined,
+  summary: Record<string, unknown> | undefined
+): PoolMeter[] {
+  const planUsage = period?.planUsage;
+  const summaryPlan = (summary?.individualUsage as { plan?: Record<string, unknown> } | undefined)
+    ?.plan;
+
+  const limit =
+    asNumber(planUsage?.limit) ?? asNumber(summaryPlan?.limit) ?? asNumber(summaryPlan?.used);
+  const autoPct = asNumber(planUsage?.autoPercentUsed) ?? asNumber(summaryPlan?.autoPercentUsed);
+  const apiPct = asNumber(planUsage?.apiPercentUsed) ?? asNumber(summaryPlan?.apiPercentUsed);
+
+  const pools: PoolMeter[] = [];
+  if (limit !== undefined && limit > 0 && autoPct !== undefined) {
+    pools.push({
+      id: "auto",
+      label: "Auto / Cursor Models",
+      percentUsed: autoPct,
+      usedCredits: (autoPct / 100) * limit,
+      limitCredits: limit,
+      detail: `${autoPct.toFixed(1)}% of included pool`,
+    });
+  }
+  if (limit !== undefined && limit > 0 && apiPct !== undefined) {
+    pools.push({
+      id: "api",
+      label: "API / Named Models",
+      percentUsed: apiPct,
+      usedCredits: (apiPct / 100) * limit,
+      limitCredits: limit,
+      detail: `${apiPct.toFixed(1)}% of included pool`,
+    });
+  }
+  return pools;
+}
+
+function buildComposition(
+  period: PeriodUsageResponse | undefined,
+  summary: Record<string, unknown> | undefined
+): SpendSlice[] {
+  const planUsage = period?.planUsage;
+  const summaryPlan = (summary?.individualUsage as { plan?: Record<string, unknown> } | undefined)
+    ?.plan;
+  const breakdown = summaryPlan?.breakdown as
+    | { included?: number; bonus?: number; total?: number }
+    | undefined;
+  const onDemand = (summary?.individualUsage as { onDemand?: Record<string, unknown> } | undefined)
+    ?.onDemand;
+
+  const included =
+    asNumber(planUsage?.includedSpend) ??
+    asNumber(breakdown?.included) ??
+    asNumber(summaryPlan?.used);
+  const bonus = asNumber(planUsage?.bonusSpend) ?? asNumber(breakdown?.bonus) ?? 0;
+  const onDemandCents =
+    onDemand?.enabled && asNumber(onDemand.used) !== undefined ? asNumber(onDemand.used)! : 0;
+
+  const slices: SpendSlice[] = [];
+  if (included !== undefined && included > 0) {
+    slices.push({ id: "included", label: "Included", cents: included });
+  }
+  if (bonus > 0) {
+    slices.push({ id: "bonus", label: "Bonus", cents: bonus });
+  }
+  if (onDemandCents > 0) {
+    slices.push({ id: "on-demand", label: "On-demand", cents: onDemandCents });
+  }
+  return slices;
+}
+
+function buildModels(
+  agg: AggregatedUsageResponse | undefined,
+  autoBucketModels: string[] | undefined
+): ModelRow[] {
+  const rows = agg?.aggregations;
+  if (!rows?.length) {
+    return [];
+  }
+
+  const autoSet = new Set((autoBucketModels || []).map((m) => m.toLowerCase()));
+  const mapped = rows
+    .map((row) => {
+      const cents = asNumber(row.totalCents) ?? 0;
+      const input = asNumber(row.inputTokens) ?? 0;
+      const output = asNumber(row.outputTokens) ?? 0;
+      const cacheRead = asNumber(row.cacheReadTokens) ?? 0;
+      const cacheWrite = asNumber(row.cacheWriteTokens) ?? 0;
+      const billableTokens = input + output;
+      const dollarsPerMillionTokens =
+        billableTokens > 0 ? cents / 100 / (billableTokens / 1_000_000) : null;
+      const model = row.modelIntent || "unknown";
+      return {
+        model,
+        cents,
+        sharePct: 0,
+        inputTokens: input,
+        outputTokens: output,
+        cacheReadTokens: cacheRead,
+        cacheWriteTokens: cacheWrite,
+        dollarsPerMillionTokens,
+        tier: row.tier,
+        isAutoBucket: autoSet.has(model.toLowerCase()),
+      };
+    })
+    .filter((r) => r.cents > 0 || r.inputTokens > 0 || r.outputTokens > 0)
+    .sort((a, b) => b.cents - a.cents);
+
+  const totalCents =
+    asNumber(agg?.totalCostCents) ?? mapped.reduce((sum, row) => sum + row.cents, 0);
+  const scale = Math.max(totalCents, 1);
+  for (const row of mapped) {
+    row.sharePct = (row.cents / scale) * 100;
+  }
+  return mapped;
+}
+
+function uniqueMessages(...candidates: Array<string | undefined>): string[] {
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const m of candidates) {
+    const text = m?.trim();
+    if (!text) {
+      continue;
+    }
+    const key = text.toLowerCase();
+    if (seen.has(key)) {
+      continue;
+    }
+    seen.add(key);
+    out.push(text);
+  }
+  return out;
 }
 
 async function fetchPeriodUsage(token: string): Promise<PeriodUsageResponse | undefined> {
-  // Connect protocol: JSON body with empty request is commonly accepted for this RPC
   const result = await getJson(
     "https://api2.cursor.sh/aiserver.v1.DashboardService/GetCurrentPeriodUsage",
     {
       method: "POST",
       headers: {
-        Authorization: `Bearer ${token}`,
-        Accept: "application/json",
+        ...authHeaders(token),
         "Content-Type": "application/json",
         "Connect-Protocol-Version": "1",
-        "User-Agent": "cursor-ai-dashboard/0.1",
       },
       body: "{}",
     }
@@ -398,14 +415,44 @@ async function fetchPeriodUsage(token: string): Promise<PeriodUsageResponse | un
   return result.json as PeriodUsageResponse;
 }
 
-async function fetchUsageSummary(token: string): Promise<Record<string, unknown> | undefined> {
+async function fetchPlanInfo(
+  token: string
+): Promise<{ planName?: string; price?: string; includedAmountCents?: number } | undefined> {
+  const result = await getJson("https://api2.cursor.sh/aiserver.v1.DashboardService/GetPlanInfo", {
+    method: "POST",
+    headers: {
+      ...authHeaders(token),
+      "Content-Type": "application/json",
+      "Connect-Protocol-Version": "1",
+    },
+    body: "{}",
+  });
+  if (!result.ok || !result.json || typeof result.json !== "object") {
+    return undefined;
+  }
+  const planInfo = (result.json as { planInfo?: Record<string, unknown> }).planInfo;
+  if (!planInfo) {
+    return undefined;
+  }
+  return {
+    planName: typeof planInfo.planName === "string" ? planInfo.planName : undefined,
+    price: typeof planInfo.price === "string" ? planInfo.price : undefined,
+    includedAmountCents: asNumber(planInfo.includedAmountCents),
+  };
+}
+
+async function fetchUsageSummary(
+  token: string,
+  cookie: string | undefined
+): Promise<Record<string, unknown> | undefined> {
+  if (!cookie) {
+    return undefined;
+  }
   const result = await getJson("https://cursor.com/api/usage-summary", {
     method: "GET",
     headers: {
-      Authorization: `Bearer ${token}`,
-      Cookie: `WorkosCursorSessionToken=${encodeURIComponent(token)}`,
-      Accept: "application/json",
-      "User-Agent": "cursor-ai-dashboard/0.1",
+      ...authHeaders(token, cookie),
+      Origin: "https://cursor.com",
     },
   });
   if (!result.ok) {
@@ -414,24 +461,31 @@ async function fetchUsageSummary(token: string): Promise<Record<string, unknown>
   return result.json as Record<string, unknown>;
 }
 
-async function fetchFilteredUsageEvents(token: string): Promise<unknown[] | undefined> {
-  const result = await getJson("https://cursor.com/api/dashboard/get-filtered-usage-events", {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${token}`,
-      Cookie: `WorkosCursorSessionToken=${encodeURIComponent(token)}`,
-      Accept: "application/json",
-      "Content-Type": "application/json",
-      Origin: "https://cursor.com",
-      "User-Agent": "cursor-ai-dashboard/0.1",
-    },
-    body: JSON.stringify({ page: 1, pageSize: 200 }),
-  });
-  if (!result.ok || !result.json || typeof result.json !== "object") {
+async function fetchAggregatedUsage(
+  token: string,
+  startMs?: number,
+  endMs?: number
+): Promise<AggregatedUsageResponse | undefined> {
+  const body = {
+    startDate: startMs ?? Date.now() - 32 * 86400000,
+    endDate: endMs ?? Date.now(),
+  };
+  const result = await getJson(
+    "https://api2.cursor.sh/aiserver.v1.DashboardService/GetAggregatedUsageEvents",
+    {
+      method: "POST",
+      headers: {
+        ...authHeaders(token),
+        "Content-Type": "application/json",
+        "Connect-Protocol-Version": "1",
+      },
+      body: JSON.stringify(body),
+    }
+  );
+  if (!result.ok) {
     return undefined;
   }
-  const payload = result.json as { usageEventsDisplay?: unknown[] };
-  return Array.isArray(payload.usageEventsDisplay) ? payload.usageEventsDisplay : undefined;
+  return result.json as AggregatedUsageResponse;
 }
 
 export async function fetchDashboardUsage(
@@ -443,19 +497,15 @@ export async function fetchDashboardUsage(
   }
 
   const notes: string[] = [];
-  let authUsage: AuthUsageResponse | undefined;
+  const cookie = workosSessionCookie(token);
+  if (!cookie) {
+    notes.push("Could not build WorkosCursorSessionToken cookie from JWT (web APIs limited).");
+  }
+
   let periodUsage: PeriodUsageResponse | undefined;
   let summary: Record<string, unknown> | undefined;
-  let usageEvents: unknown[] | undefined;
-
-  try {
-    authUsage = await fetchAuthUsage(token);
-    if (!authUsage) {
-      notes.push("auth/usage request failed or returned non-OK.");
-    }
-  } catch (err) {
-    notes.push(`auth/usage error: ${err instanceof Error ? err.message : String(err)}`);
-  }
+  let planInfo: Awaited<ReturnType<typeof fetchPlanInfo>>;
+  let aggregations: AggregatedUsageResponse | undefined;
 
   try {
     periodUsage = await fetchPeriodUsage(token);
@@ -469,89 +519,122 @@ export async function fetchDashboardUsage(
   }
 
   try {
-    summary = await fetchUsageSummary(token);
+    planInfo = await fetchPlanInfo(token);
+  } catch {
+    planInfo = undefined;
+  }
+
+  try {
+    summary = await fetchUsageSummary(token, cookie);
     if (!summary) {
-      notes.push("usage-summary unavailable (cookie/token may be required).");
+      notes.push("usage-summary unavailable.");
     }
   } catch {
     notes.push("usage-summary request failed.");
   }
 
+  const startMs =
+    toEpochMs(periodUsage?.billingCycleStart) ??
+    toEpochMs(summary?.billingCycleStart) ??
+    Date.now() - 32 * 86400000;
+  const endMs =
+    toEpochMs(periodUsage?.billingCycleEnd) ??
+    toEpochMs(summary?.billingCycleEnd) ??
+    Date.now() + 86400000;
+
   try {
-    usageEvents = await fetchFilteredUsageEvents(token);
-    if (!usageEvents) {
-      notes.push("filtered usage events unavailable.");
+    aggregations = await fetchAggregatedUsage(token, startMs, Date.now());
+    if (!aggregations?.aggregations?.length) {
+      notes.push("GetAggregatedUsageEvents returned no per-model rows.");
     }
-  } catch {
-    notes.push("filtered usage events request failed.");
+  } catch (err) {
+    notes.push(
+      `GetAggregatedUsageEvents error: ${err instanceof Error ? err.message : String(err)}`
+    );
   }
 
-  const eventBars = aggregateFromUsageEvents(
-    usageEvents ??
-      summary?.usageEventsDisplay ??
-      summary?.usageEvents ??
-      summary?.events ??
-      periodUsage?.usageEvents ??
-      (periodUsage as { filteredUsageEvents?: unknown } | undefined)?.filteredUsageEvents
+  const autoBucketModels = Array.isArray(periodUsage?.autoBucketModels)
+    ? periodUsage!.autoBucketModels!.filter((m): m is string => typeof m === "string")
+    : undefined;
+
+  const pools = buildPools(periodUsage, summary);
+  const composition = buildComposition(periodUsage, summary);
+  const models = buildModels(aggregations, autoBucketModels);
+
+  if (pools.length === 0 && models.length === 0 && composition.length === 0) {
+    return demoData("Live APIs responded but no usage data was found.");
+  }
+
+  const now = Date.now();
+  const daysElapsed = Math.max(1, Math.floor((now - startMs) / 86400000) + 1);
+  const daysRemaining = Math.max(0, Math.ceil((endMs - now) / 86400000));
+
+  const includedLimit =
+    asNumber(periodUsage?.planUsage?.limit) ??
+    asNumber(
+      (summary?.individualUsage as { plan?: { limit?: number } } | undefined)?.plan?.limit
+    ) ??
+    planInfo?.includedAmountCents;
+  const includedUsed =
+    asNumber(periodUsage?.planUsage?.includedSpend) ??
+    asNumber((summary?.individualUsage as { plan?: { used?: number } } | undefined)?.plan?.used) ??
+    0;
+  const totalSpend =
+    asNumber(aggregations?.totalCostCents) ??
+    asNumber(periodUsage?.planUsage?.totalSpend) ??
+    composition.reduce((s, c) => s + c.cents, 0);
+
+  // Prefer the specific Auto/API messages; keep the generic limit line if present.
+  const messages = uniqueMessages(
+    periodUsage?.autoModelSelectedDisplayMessage ||
+      (typeof summary?.autoModelSelectedDisplayMessage === "string"
+        ? summary.autoModelSelectedDisplayMessage
+        : undefined),
+    periodUsage?.namedModelSelectedDisplayMessage ||
+      (typeof summary?.namedModelSelectedDisplayMessage === "string"
+        ? summary.namedModelSelectedDisplayMessage
+        : undefined),
+    periodUsage?.displayMessage
   );
-
-  let bars = mergeBars(
-    barsFromUsageSummary(summary),
-    barsFromPeriodUsage(periodUsage || {}),
-    barsFromAuthUsage(authUsage || {}),
-    eventBars
-  );
-
-  // Ensure named pools exist when we only have aggregate numbers
-  if (bars.length === 0 && periodUsage) {
-    const used = asNumber(periodUsage.totalUsage) ?? 0;
-    const limit = asNumber(periodUsage.limit) ?? 0;
-    if (limit > 0) {
-      bars = [
-        { id: "cursor-models", label: "Cursor Models", used, limit, unit: "credits" },
-        {
-          id: "other-models",
-          label: "Other Models / API",
-          used: Math.round(used * 0.15),
-          limit: Math.max(limit, 1),
-          unit: "credits",
-        },
-      ];
-    }
-  }
-
-  if (bars.length === 0) {
-    return demoData("Live APIs responded but no usage pools were found.");
-  }
-
-  // Prefer stable ordering: pools first, then models
-  const poolOrder = ["cursor models", "other models / api", "gpt-4 / cursor models"];
-  bars.sort((a, b) => {
-    const ai = poolOrder.indexOf(a.label.toLowerCase());
-    const bi = poolOrder.indexOf(b.label.toLowerCase());
-    if (ai !== -1 || bi !== -1) {
-      return (ai === -1 ? 99 : ai) - (bi === -1 ? 99 : bi);
-    }
-    return b.used - a.used;
-  });
 
   const planName =
-    (typeof periodUsage?.plan === "string" && periodUsage.plan) ||
-    (typeof periodUsage?.plan === "object" && periodUsage.plan?.name) ||
-    (typeof summary?.planName === "string" && (summary.planName as string)) ||
-    (typeof summary?.membershipType === "string" && (summary.membershipType as string)) ||
+    planInfo?.planName ||
+    (typeof summary?.membershipType === "string" &&
+      String(summary.membershipType).replace(/^\w/, (c) => c.toUpperCase())) ||
     undefined;
 
   return {
     source: "live",
     planName,
-    billingCycleStart:
-      formatDate(periodUsage?.billingCycleStart) ||
-      formatDate(authUsage?.startOfMonth) ||
-      formatDate(summary?.billingCycleStart),
-    billingCycleEnd:
-      formatDate(periodUsage?.billingCycleEnd) || formatDate(summary?.billingCycleEnd),
-    bars,
+    planPrice: planInfo?.price,
+    billingCycleStart: formatDate(startMs) || formatDate(summary?.billingCycleStart),
+    billingCycleEnd: formatDate(endMs) || formatDate(summary?.billingCycleEnd),
+    daysElapsed,
+    daysRemaining,
+    messages: messages.length ? messages : undefined,
+    pools,
+    composition,
+    models,
+    autoBucketModels,
+    burn:
+      includedLimit !== undefined
+        ? {
+            spendPerDayCents: totalSpend / daysElapsed,
+            includedLimitCents: includedLimit,
+            includedUsedCents: includedUsed,
+            includedRemainingCents: Math.max(0, includedLimit - includedUsed),
+          }
+        : undefined,
+    totals: {
+      totalCostCents: totalSpend,
+      includedSpendCents: asNumber(periodUsage?.planUsage?.includedSpend),
+      bonusSpendCents: asNumber(periodUsage?.planUsage?.bonusSpend),
+      onDemandCents: composition.find((s) => s.id === "on-demand")?.cents,
+      totalInputTokens: asNumber(aggregations?.totalInputTokens),
+      totalOutputTokens: asNumber(aggregations?.totalOutputTokens),
+      totalCacheReadTokens: asNumber(aggregations?.totalCacheReadTokens),
+      totalCacheWriteTokens: asNumber(aggregations?.totalCacheWriteTokens),
+    },
     fetchedAt: new Date().toISOString(),
     notes: notes.length ? notes : undefined,
   };

@@ -38,11 +38,8 @@
   },
   "devDependencies": {
     "@types/node": "^20.11.0",
-    "@types/sql.js": "^1.4.11",
     "@types/vscode": "^1.85.0",
     "typescript": "^5.3.3"
   },
-  "dependencies": {
-    "sql.js": "^1.10.3"
-  }
+  "dependencies": {}
 }

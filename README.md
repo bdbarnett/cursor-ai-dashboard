@@ -6,7 +6,7 @@ A Cursor / VS Code extension that opens an editor-area webview and shows horizon
 
 - **Cursor AI Dashboard: Open** — opens the dashboard in the editor
 - **Cursor AI Dashboard: Refresh** — reloads usage data
-- Reads the Cursor auth token from local `state.vscdb` (Windows + WSL-aware paths)
+- Reads the Cursor auth token from local `state.vscdb` via Python sqlite3 (Windows + WSL-aware; needed because the DB can be multi-GB)
 - Fetches usage from Cursor APIs (`auth/usage`, `GetCurrentPeriodUsage`, optional `usage-summary`)
 - Aggregates per-model usage from filtered usage events when available
 - Falls back to demo/mock data so the UI works without API access
@@ -21,7 +21,12 @@ npm install
 npm run compile
 ```
 
-Then press **F5** (*Run Extension*) or use **Developer: Install Extension from Location…** on this folder.
+Then press **F5** (*Run Extension*), or install into the Cursor WSL remote host:
+
+```bash
+./scripts/install-cursor-wsl.sh
+# Developer: Reload Window
+```
 
 Commands:
 
@@ -30,4 +35,4 @@ Commands:
 
 ## Notes
 
-Token extraction depends on Cursor desktop having signed-in session data in `state.vscdb`. On WSL, the extension also probes `/mnt/c/Users/*/AppData/Roaming/Cursor/...`.
+Token extraction depends on Cursor desktop having signed-in session data in `state.vscdb`. On WSL, the extension probes `/mnt/c/Users/*/AppData/Roaming/Cursor/...` and queries it with **Windows `python.exe`** (Linux sqlite over `/mnt/c` fails on large WAL databases; `sql.js` cannot load multi-GB files).
